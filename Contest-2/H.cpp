@@ -1,3 +1,7 @@
+/* Заданы две строки s, t и целое число k. Рассмотрим множество всех таких
+ * непустых строк, которые встречаются как подстроки в s и t одновременно.
+ * Найдите k-ую в лексикографическом порядке строку из этого множества.*/
+
 #include <algorithm>
 #include <array>
 #include <iostream>
@@ -171,9 +175,7 @@ void PropagateMembership(std::vector<SamState>& states) {
   }
 }
 
-void ClampToSafeLimit(long long& value) {
-  value = std::min(value, kSafeLimit);
-}
+void ClampToSafeLimit(long long& value) { value = std::min(value, kSafeLimit); }
 
 void AccumulateChildren(const std::vector<SamState>& states, std::size_t state,
                         std::vector<long long>& reachable) {
