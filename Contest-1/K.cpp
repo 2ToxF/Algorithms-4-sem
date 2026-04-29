@@ -13,212 +13,201 @@
  * было, x=0). Перед обработкой очередного запроса нужно циклически сдвинуть
  * соответствующую строку (s или t) на x позиций влево. */
 
+#include <array>
 #include <iostream>
 #include <queue>
 #include <string>
 #include <unordered_set>
 #include <vector>
 
+enum class QueryType : char {
+  Add = '+',
+  Remove = '-',
+  Count = '?',
+};
+
 class KarasManager {
  private:
   static const std::size_t kAlphabetSize = 3;
 
-  struct AcNode {
-    std::size_t next_node[kAlphabetSize];
-    std::size_t fail_node;
-    std::size_t match_count;
+  struct AhoCorasickNode {
+    std::array<std::size_t, kAlphabetSize> next_node{};
+    std::size_t failure_link = 0;
+    std::size_t match_count = 0;
   };
 
   struct AhoCorasick {
-    std::vector<AcNode> nodes;
+    std::vector<AhoCorasickNode> nodes;
+
+    AhoCorasick() = default;
+
+    explicit AhoCorasick(const std::vector<std::string>& strings) {
+      BuildTrie(strings);
+      BuildFailureLinks();
+    }
+
+    std::size_t CountMatches(const std::string& text) const {
+      if (nodes.empty()) {
+        return 0;
+      }
+
+      std::size_t total_matches = 0;
+      std::size_t current_state = 0;
+
+      for (std::size_t i = 0; i < text.size(); ++i) {
+        std::size_t character_index = GetCharIndex(text[i]);
+        current_state = nodes[current_state].next_node[character_index];
+        total_matches += nodes[current_state].match_count;
+      }
+
+      return total_matches;
+    }
+
+   private:
+    void BuildTrie(const std::vector<std::string>& strings) {
+      nodes.emplace_back();
+
+      for (std::size_t i = 0; i < strings.size(); ++i) {
+        std::size_t current_state = 0;
+        for (std::size_t j = 0; j < strings[i].size(); ++j) {
+          std::size_t character_index = GetCharIndex(strings[i][j]);
+          std::size_t next_state = nodes[current_state].next_node[character_index];
+
+          if (next_state == 0) {
+            std::size_t new_state_index = nodes.size();
+            nodes[current_state].next_node[character_index] = new_state_index;
+            nodes.emplace_back();
+            current_state = new_state_index;
+          } else {
+            current_state = next_state;
+          }
+        }
+
+        nodes[current_state].match_count += 1;
+      }
+    }
+
+    void BuildFailureLinks() {
+      std::queue<std::size_t> node_queue;
+      for (std::size_t i = 0; i < kAlphabetSize; ++i) {
+        std::size_t next_state = nodes[0].next_node[i];
+        if (next_state != 0) {
+          node_queue.push(next_state);
+        }
+      }
+
+      while (!node_queue.empty()) {
+        std::size_t current_state = node_queue.front();
+        node_queue.pop();
+
+        std::size_t failure_state = nodes[current_state].failure_link;
+        nodes[current_state].match_count += nodes[failure_state].match_count;
+
+        for (std::size_t i = 0; i < kAlphabetSize; ++i) {
+          std::size_t next_state = nodes[current_state].next_node[i];
+          std::size_t failure_next = nodes[failure_state].next_node[i];
+
+          if (next_state != 0) {
+            nodes[next_state].failure_link = failure_next;
+            node_queue.push(next_state);
+          } else {
+            nodes[current_state].next_node[i] = failure_next;
+          }
+        }
+      }
+    }
+
+    static std::size_t GetCharIndex(char character) {
+      return static_cast<std::size_t>(character - 'a');
+    }
   };
 
-  struct AcGroup {
+  struct AhoCorasickGroup {
     std::vector<std::string> strings;
     AhoCorasick automaton;
+
+    AhoCorasickGroup() = default;
+
+    explicit AhoCorasickGroup(const std::vector<std::string>& group_strings)
+        : strings(group_strings), automaton(group_strings) {
+    }
+
+    void Clear() {
+      strings.clear();
+      automaton.nodes.clear();
+    }
   };
 
-  struct LogAhoCorasick {
-    std::vector<AcGroup> groups;
+  struct BinaryAhoCorasick {
+    std::vector<AhoCorasickGroup> groups;
+
+    void AddString(const std::string& new_string) {
+      std::vector<std::string> current_strings;
+      current_strings.push_back(new_string);
+
+      MergeGroups(current_strings);
+
+      if (!current_strings.empty()) {
+        groups.emplace_back(current_strings);
+      }
+    }
+
+    std::size_t CountMatches(const std::string& text) const {
+      std::size_t total_matches = 0;
+      for (std::size_t i = 0; i < groups.size(); ++i) {
+        if (!groups[i].strings.empty()) {
+          total_matches += groups[i].automaton.CountMatches(text);
+        }
+      }
+      return total_matches;
+    }
+
+   private:
+    void MergeGroups(std::vector<std::string>& current_strings) {
+      for (std::size_t i = 0; i < groups.size(); ++i) {
+        if (groups[i].strings.empty()) {
+          groups[i] = AhoCorasickGroup(current_strings);
+          current_strings.clear();
+          return;
+        }
+
+        for (std::size_t j = 0; j < groups[i].strings.size(); ++j) {
+          current_strings.push_back(groups[i].strings[j]);
+        }
+        groups[i].Clear();
+      }
+    }
   };
 
  public:
   void AddString(const std::string& text) {
     if (!active_strings_.contains(text)) {
       active_strings_.insert(text);
-      AddStringToLogAc(added_automaton_, text);
+      added_automaton_.AddString(text);
     }
   }
 
   std::size_t CountMatches(const std::string& text) const {
-    std::size_t added_matches = QueryLogAc(added_automaton_, text);
-    std::size_t removed_matches = QueryLogAc(removed_automaton_, text);
+    std::size_t added_matches = added_automaton_.CountMatches(text);
+    std::size_t removed_matches = removed_automaton_.CountMatches(text);
     return added_matches - removed_matches;
   }
 
   void RemoveString(const std::string& text) {
     if (active_strings_.contains(text)) {
       active_strings_.erase(text);
-      AddStringToLogAc(removed_automaton_, text);
+      removed_automaton_.AddString(text);
     }
   }
 
  private:
-  static void AddStringToLogAc(LogAhoCorasick& log_automaton,
-                               const std::string& new_string) {
-    std::vector<std::string> current_strings;
-    current_strings.push_back(new_string);
-
-    MergeGroups(log_automaton, current_strings);
-
-    if (current_strings.size() != 0) {
-      AcGroup new_group;
-      new_group.strings = current_strings;
-      new_group.automaton = BuildAc(current_strings);
-      log_automaton.groups.push_back(new_group);
-    }
-  }
-
-  static AhoCorasick BuildAc(const std::vector<std::string>& strings) {
-    AhoCorasick automaton = BuildTrie(strings);
-    BuildFailLinks(automaton);
-    return automaton;
-  }
-
-  static void BuildFailLinks(AhoCorasick& automaton) {
-    std::queue<std::size_t> node_queue;
-    for (std::size_t i = 0; i < kAlphabetSize; ++i) {
-      std::size_t next_state = automaton.nodes[0].next_node[i];
-      if (next_state != 0) {
-        node_queue.push(next_state);
-      }
-    }
-
-    while (node_queue.size() != 0) {
-      std::size_t current_state = node_queue.front();
-      node_queue.pop();
-
-      std::size_t fail_state = automaton.nodes[current_state].fail_node;
-      automaton.nodes[current_state].match_count +=
-          automaton.nodes[fail_state].match_count;
-
-      for (std::size_t i = 0; i < kAlphabetSize; ++i) {
-        std::size_t next_state = automaton.nodes[current_state].next_node[i];
-        std::size_t fail_next = automaton.nodes[fail_state].next_node[i];
-
-        if (next_state != 0) {
-          automaton.nodes[next_state].fail_node = fail_next;
-          node_queue.push(next_state);
-        } else {
-          automaton.nodes[current_state].next_node[i] = fail_next;
-        }
-      }
-    }
-  }
-
-  static AhoCorasick BuildTrie(const std::vector<std::string>& strings) {
-    AhoCorasick automaton;
-    AcNode root_node = CreateNode();
-    automaton.nodes.push_back(root_node);
-
-    for (std::size_t i = 0; i < strings.size(); ++i) {
-      std::size_t current_state = 0;
-      for (std::size_t j = 0; j < strings[i].size(); ++j) {
-        std::size_t character_index = GetCharIndex(strings[i][j]);
-        std::size_t next_state =
-            automaton.nodes[current_state].next_node[character_index];
-
-        if (next_state == 0) {
-          AcNode new_node = CreateNode();
-          std::size_t new_state_index = automaton.nodes.size();
-          automaton.nodes[current_state].next_node[character_index] =
-              new_state_index;
-          automaton.nodes.push_back(new_node);
-          current_state = new_state_index;
-        } else {
-          current_state = next_state;
-        }
-      }
-
-      automaton.nodes[current_state].match_count += 1;
-    }
-    return automaton;
-  }
-
-  static AcNode CreateNode() {
-    AcNode new_node;
-    for (std::size_t i = 0; i < kAlphabetSize; ++i) {
-      new_node.next_node[i] = 0;
-    }
-    new_node.fail_node = 0;
-    new_node.match_count = 0;
-    return new_node;
-  }
-
-  static std::size_t GetCharIndex(char character) {
-    if (character == 'a') {
-      return 0;
-    }
-    if (character == 'b') {
-      return 1;
-    }
-    return 2;
-  }
-
-  static void MergeGroups(LogAhoCorasick& log_automaton,
-                          std::vector<std::string>& current_strings) {
-    for (std::size_t i = 0; i < log_automaton.groups.size(); ++i) {
-      if (log_automaton.groups[i].strings.size() == 0) {
-        log_automaton.groups[i].strings = current_strings;
-        log_automaton.groups[i].automaton = BuildAc(current_strings);
-        current_strings.clear();
-        return;
-      }
-
-      for (std::size_t j = 0; j < log_automaton.groups[i].strings.size(); ++j) {
-        current_strings.push_back(log_automaton.groups[i].strings[j]);
-      }
-      log_automaton.groups[i].strings.clear();
-      log_automaton.groups[i].automaton.nodes.clear();
-    }
-  }
-
-  static std::size_t QueryAc(const AhoCorasick& automaton,
-                             const std::string& text) {
-    if (automaton.nodes.size() == 0) {
-      return 0;
-    }
-
-    std::size_t total_matches = 0;
-    std::size_t current_state = 0;
-
-    for (std::size_t i = 0; i < text.size(); ++i) {
-      std::size_t character_index = GetCharIndex(text[i]);
-      current_state = automaton.nodes[current_state].next_node[character_index];
-      total_matches += automaton.nodes[current_state].match_count;
-    }
-
-    return total_matches;
-  }
-
-  static std::size_t QueryLogAc(const LogAhoCorasick& log_automaton,
-                                const std::string& text) {
-    std::size_t total_matches = 0;
-    for (std::size_t i = 0; i < log_automaton.groups.size(); ++i) {
-      if (log_automaton.groups[i].strings.size() != 0) {
-        total_matches += QueryAc(log_automaton.groups[i].automaton, text);
-      }
-    }
-    return total_matches;
-  }
-
-  LogAhoCorasick added_automaton_;
-  LogAhoCorasick removed_automaton_;
+  BinaryAhoCorasick added_automaton_;
+  BinaryAhoCorasick removed_automaton_;
   std::unordered_set<std::string> active_strings_;
 };
 
 std::string ShiftString(const std::string& text, std::size_t shift_amount) {
-  if (text.size() == 0) {
+  if (text.empty()) {
     return text;
   }
 
@@ -250,15 +239,17 @@ int main() {
 
     std::string shifted_text = ShiftString(text, last_answer);
 
-    if (query_type == '+') {
-      manager.AddString(shifted_text);
-    }
-    if (query_type == '-') {
-      manager.RemoveString(shifted_text);
-    }
-    if (query_type == '?') {
-      last_answer = manager.CountMatches(shifted_text);
-      std::cout << last_answer << '\n';
+    switch (static_cast<QueryType>(query_type)) {
+      case QueryType::Add:
+        manager.AddString(shifted_text);
+        break;
+      case QueryType::Remove:
+        manager.RemoveString(shifted_text);
+        break;
+      case QueryType::Count:
+        last_answer = manager.CountMatches(shifted_text);
+        std::cout << last_answer << '\n';
+        break;
     }
   }
 
