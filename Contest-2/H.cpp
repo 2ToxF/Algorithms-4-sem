@@ -12,23 +12,23 @@ static const std::size_t kAlphabetSize = 26;
 static const std::size_t kNoState = static_cast<std::size_t>(-1);
 static const long long kSafeLimit = 2e18;
 
-struct SamState {
+struct SuffixAutomatonState {
   std::size_t len = 0;
   std::size_t link = kNoState;
   std::array<std::size_t, kAlphabetSize> next;
   bool in_first = false;
   bool in_second = false;
 
-  SamState() { next.fill(kNoState); }
+  SuffixAutomatonState() { next.fill(kNoState); }
 };
 
-bool IsCommon(const SamState& state) {
+bool IsCommon(const SuffixAutomatonState& state) {
   return state.in_first && state.in_second;
 }
 
-class GeneralizedSam {
+class GeneralizedSuffixAutomaton {
  public:
-  GeneralizedSam() : last_state_(0) { states_.emplace_back(); }
+  GeneralizedSuffixAutomaton() : last_state_(0) { states_.emplace_back(); }
 
   void AddString(const std::string& text, bool is_second) {
     last_state_ = 0;
@@ -38,10 +38,10 @@ class GeneralizedSam {
     }
   }
 
-  std::vector<SamState>& GetStates() { return states_; }
+  std::vector<SuffixAutomatonState>& GetStates() { return states_; }
 
  private:
-  std::vector<SamState> states_;
+  std::vector<SuffixAutomatonState> states_;
   std::size_t last_state_;
 
   void MarkState(std::size_t state, bool is_second) {
@@ -134,7 +134,8 @@ class GeneralizedSam {
   }
 };
 
-std::vector<std::size_t> SortStatesByLen(const std::vector<SamState>& states) {
+std::vector<std::size_t> SortStatesByLen(
+    const std::vector<SuffixAutomatonState>& states) {
   std::size_t num_states = states.size();
   std::size_t max_len = 0;
   for (std::size_t i = 0; i < num_states; ++i) {
@@ -157,7 +158,7 @@ std::vector<std::size_t> SortStatesByLen(const std::vector<SamState>& states) {
   return order;
 }
 
-void PropagateMembership(std::vector<SamState>& states) {
+void PropagateMembership(std::vector<SuffixAutomatonState>& states) {
   std::vector<std::size_t> order = SortStatesByLen(states);
 
   for (std::size_t i = states.size(); i > 0; --i) {
@@ -177,8 +178,8 @@ void PropagateMembership(std::vector<SamState>& states) {
 
 void ClampToSafeLimit(long long& value) { value = std::min(value, kSafeLimit); }
 
-void AccumulateChildren(const std::vector<SamState>& states, std::size_t state,
-                        std::vector<long long>& reachable) {
+void AccumulateChildren(const std::vector<SuffixAutomatonState>& states,
+                        std::size_t state, std::vector<long long>& reachable) {
   for (std::size_t ch = 0; ch < kAlphabetSize; ++ch) {
     std::size_t next = states[state].next[ch];
     if (next != kNoState) {
@@ -189,7 +190,7 @@ void AccumulateChildren(const std::vector<SamState>& states, std::size_t state,
 }
 
 std::vector<long long> CountReachableStrings(
-    const std::vector<SamState>& states) {
+    const std::vector<SuffixAutomatonState>& states) {
   std::vector<std::size_t> order = SortStatesByLen(states);
   std::size_t num_states = states.size();
   std::vector<long long> reachable(num_states, 0);
@@ -205,7 +206,7 @@ std::vector<long long> CountReachableStrings(
   return reachable;
 }
 
-std::string TraceKthString(const std::vector<SamState>& states,
+std::string TraceKthString(const std::vector<SuffixAutomatonState>& states,
                            const std::vector<long long>& reachable,
                            long long target_k) {
   std::string result;
@@ -234,20 +235,21 @@ std::string TraceKthString(const std::vector<SamState>& states,
   return result;
 }
 
-GeneralizedSam BuildSam(const std::string& str_first,
-                        const std::string& str_second) {
-  GeneralizedSam sam;
-  sam.AddString(str_first, false);
-  sam.AddString(str_second, true);
-  return sam;
+GeneralizedSuffixAutomaton BuildGeneralizedSuffixAutomaton(
+    const std::string& str_first, const std::string& str_second) {
+  GeneralizedSuffixAutomaton suffix_automation;
+  suffix_automation.AddString(str_first, false);
+  suffix_automation.AddString(str_second, true);
+  return suffix_automation;
 }
 
 std::string FindKthCommonSubstring(const std::string& str_first,
                                    const std::string& str_second,
                                    long long target_k) {
-  GeneralizedSam sam = BuildSam(str_first, str_second);
+  GeneralizedSuffixAutomaton suffix_automation =
+      BuildGeneralizedSuffixAutomaton(str_first, str_second);
 
-  std::vector<SamState>& states = sam.GetStates();
+  std::vector<SuffixAutomatonState>& states = suffix_automation.GetStates();
   PropagateMembership(states);
 
   std::vector<long long> reachable = CountReachableStrings(states);
