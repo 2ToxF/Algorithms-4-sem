@@ -27,7 +27,7 @@
 #include <string>
 #include <vector>
 
-static const std::size_t kNoNode = static_cast<std::size_t>(-1);
+static const std::size_t kInvalidNode = static_cast<std::size_t>(-1);
 static const std::size_t kInfEnd = static_cast<std::size_t>(-1);
 
 struct TreeNode {
@@ -37,7 +37,7 @@ struct TreeNode {
   std::map<char, std::size_t> children;
 
   TreeNode(std::size_t st, std::size_t en)
-      : start(st), end(en), suffix_link(kNoNode) {}
+      : start(st), end(en), suffix_link(kInvalidNode) {}
 
   std::size_t EdgeLength(std::size_t cur_end) const {
     std::size_t real_end = (end == kInfEnd) ? cur_end : end;
@@ -78,7 +78,7 @@ class SuffixTree {
   }
 
   void LinkInternal(std::size_t& last_internal, std::size_t node) {
-    if (last_internal != kNoNode) {
+    if (last_internal != kInvalidNode) {
       nodes_[last_internal].suffix_link = node;
     }
     last_internal = node;
@@ -88,7 +88,7 @@ class SuffixTree {
     if (active_node_ == 0 && active_length_ != 0) {
       --active_length_;
       active_edge_ = phase - remainder_ + 1;
-    } else if (nodes_[active_node_].suffix_link != kNoNode) {
+    } else if (nodes_[active_node_].suffix_link != kInvalidNode) {
       active_node_ = nodes_[active_node_].suffix_link;
     } else {
       active_node_ = 0;
@@ -100,7 +100,7 @@ class SuffixTree {
     std::size_t leaf = AddNode(phase, kInfEnd);
     nodes_[active_node_].children[edge_char] = leaf;
     LinkInternal(last_internal, active_node_);
-    last_internal = kNoNode;
+    last_internal = kInvalidNode;
   }
 
   bool WalkDownIfNeeded(std::size_t next) {
@@ -141,7 +141,7 @@ class SuffixTree {
   void ExtendTree(std::size_t phase) {
     cur_end_ = phase + 1;
     ++remainder_;
-    std::size_t last_internal = kNoNode;
+    std::size_t last_internal = kInvalidNode;
 
     while (remainder_ != 0) {
       if (active_length_ == 0) {
@@ -149,7 +149,7 @@ class SuffixTree {
       }
 
       char edge_char = text_[active_edge_];
-      if (nodes_[active_node_].children.count(edge_char) == 0) {
+      if (!nodes_[active_node_].children.contains(edge_char)) {
         AddLeafFromActive(phase, last_internal);
         --remainder_;
         MoveActivePoint(phase);
@@ -194,7 +194,7 @@ EdgeLabel TranslateEdge(std::size_t start, std::size_t end,
   return {1, start - len_first, end - len_first};
 }
 
-struct OutputEntry {
+struct OutputVertexDescription {
   std::size_t parent;
   std::size_t which_string;
   std::size_t left;
@@ -206,9 +206,9 @@ struct StackFrame {
   std::size_t parent_out_id;
 };
 
-std::vector<OutputEntry> CollectEntries(const std::vector<TreeNode>& nodes,
-                                        std::size_t len_first) {
-  std::vector<OutputEntry> entries;
+std::vector<OutputVertexDescription> CollectEntries(
+    const std::vector<TreeNode>& nodes, std::size_t len_first) {
+  std::vector<OutputVertexDescription> entries;
   std::vector<StackFrame> stk;
   stk.push_back({0, 0});
   std::size_t next_id = 0;
@@ -246,7 +246,8 @@ SuffixTree BuildTree(const std::string& str_first,
 }
 
 void PrintTree(const SuffixTree& tree, std::size_t len_first) {
-  std::vector<OutputEntry> entries = CollectEntries(tree.GetNodes(), len_first);
+  std::vector<OutputVertexDescription> entries =
+      CollectEntries(tree.GetNodes(), len_first);
 
   std::size_t vertex_count = entries.size() + 1;
   std::cout << vertex_count << '\n';
